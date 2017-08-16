@@ -1,1 +1,246 @@
 "First R-Blog"
+
+"This is an old project where an attempt to model the win rates of the MLB was done following a research article"
+
+#The relative strength parameter lamda is a function of the teams' relative statistics and the r values.
+#The r values are sampled in this model, so lamda has to be constantly recalculated using the function below.
+lamda_calc <- function(lamda_vals, r_one, r_two, r_three){
+  t <- length(lamda_vals)  
+  lamdas <- NULL
+  
+  for(s in 1:t){
+    lamdas <- append(lamdas, (lamda_vals[[s]][1]**r_one)*(lamda_vals[[s]][2]**r_two)*(lamda_vals[[s]][3]**r_three))    
+}
+  return( lamdas  )
+}
+
+#This function draws a list of ps, each from a beta distribtion 
+#with parameters that are a function of lamda, detla and x
+p_sample <-  function(x, lamda_vals, delta, r_one, r_two, r_three){
+  lamda <- lamda_calc(lamda_vals, r_one, r_two, r_three)
+  p <- NULL
+  t <- length(x)
+
+  for(s in 1:t){
+    a <- x[s] + lamda[s] * delta
+    b <- 2 - x[s]
+  
+    new_p <- rbeta(1, a, b)
+    p <- append(p, new_p)
+
+}  
+  return(p)
+}
+
+#Delta and the r values are proportionate to the same function, so it is defined below to be used as the pdf
+#in the metropolis algorithms which follow.
+multi_pdf <- function(lamda_vals, p, delta, r_one_old, r_two_old, r_three_old){
+  lamda <- lamda_calc(lamda_vals, r_one_old, r_two_old, r_three_old)
+  t <- length(lamda)
+  value <- 1
+
+  for(s in 1:t){
+    a <- lamda[s] * delta
+    b <- (gamma(a + 1) / gamma(a)) *(p[s]**(a))
+    value <- value * b
+}
+  return(value)
+}
+
+#This uses a metropolis alogorithm to create a thousound samples (to allow for burn in) of delta
+delta_sample <- function(lamda_vals, p, r_one, r_two, r_three){
+  storage <- NULL
+  z_0 <- 1
+  storage <- append(storage, z_0)
+  
+  while(length(storage) < 1000){
+    y_star <- runif(1, 0, 2)
+    u <- runif(1,0,1)
+    z_last <- tail(storage, n = 1)
+    a <- multi_pdf(lamda_vals, p, y_star, r_one, r_two, r_three)
+    b <- multi_pdf(lamda_vals, p, z_last, r_one, r_two, r_three)
+    rho <- min(1, a/b )
+    
+    if (u < rho) {
+      storage <- append(storage, y_star)
+    }
+  }
+    
+    return(storage)
+  
+}
+
+#This uses a metropolis alogorithm to create a thousound samples (to allow for burn in) of r_one 
+#then returns the last one for the gibbs sampler
+r_one_sample <- function(lamda_vals, p, delta, r_two, r_three){
+  
+  storage <- NULL
+  z_0 <- 1
+  storage <- append(storage, z_0)
+  
+  while(length(storage) < 1000){
+    y_star <- runif(1, 0, 2)
+    u <- runif(1,0,1)
+    z_last <- tail(storage, n = 1)
+    a <- multi_pdf(lamda_vals, p, delta, y_star, r_two, r_three)
+    b <- multi_pdf(lamda_vals, p, delta, z_last, r_two, r_three)
+    rho <- min(1, a/b )
+    
+    if (u < rho) {
+      storage <- append(storage, y_star)
+    }
+  }
+  
+  return(storage)
+}
+
+#This uses a metropolis alogorithm to create a thousound samples (to allow for burn in) of r_two 
+#then returns the last one for the gibbs sampler
+r_two_sample <- function(lamda_vals, p, delta, r_one, r_three){
+  
+  storage <- NULL
+  z_0 <- 1
+  storage <- append(storage, z_0)
+  
+  while(length(storage) < 1000){
+    y_star <- runif(1, 0, 2)
+    u <- runif(1,0,1)
+    z_last <- tail(storage, n = 1)
+    a <- multi_pdf(lamda_vals, p, delta, r_one, y_star, r_three)
+    b <- multi_pdf(lamda_vals, p, delta, r_one, z_last, r_three)
+    rho <- min(1, a/b )
+    
+    if (u < rho) {
+      storage <- append(storage, y_star)
+    }
+  }
+  
+  return(storage)
+}
+
+#This uses a metropolis alogorithm to create a thousound samples (to allow for burn in) of r_three 
+#then returns the last one for the gibbs sampler
+r_three_sample <- function(lamda_vals, p, delta, r_one, r_two){
+  
+  storage <- NULL
+  z_0 <- 1
+  storage <- append(storage, z_0)
+  while(length(storage) < 1000){
+    y_star <- runif(1, 0, 2)
+    u <- runif(1,0,1)
+    z_last <- tail(storage, n = 1)
+    a <- multi_pdf(lamda_vals, p, delta, r_one, r_two, y_star)
+    b <- multi_pdf(lamda_vals, p, delta, r_one, r_two, z_last)
+    rho <- min(1, a/b )
+    
+    if (u < rho) {
+      storage <- append(storage, y_star)
+    }
+  }
+  
+  return(storage)
+}
+
+#initialise
+
+#number of iterations to run the Gibbs sampler for
+samples <- 1000 
+
+#win history (chosen arbitririly for this example)
+x <- c(1,0,1,0) 
+
+#number of games played
+t <- length(x) 
+
+#lamda_vals stores all the relevant statistics that are needed to calculate lamda in the algorithms above.
+#these statistics are the ratios of the teams that played win ratios, batting average and ERA.
+lamda_vals <- list(c(.59/.51, .267/.267, 4.18/4.04), c(.59/.49, .267/.263, 4.29/4.04), c(.59/.39, .267/.248, 4.71/4.04), c(.59/.38, .267/.258, 4.96/4.04))
+
+#Values to initialise the Gibbs sampler with
+delta_zero <- runif(1,0,2)
+r_one_zero <- runif(1,0,2)
+r_two_zero <- runif(1,0,2)
+r_three_zero <- runif(1,0,2)
+p_zero <- p_sample(x, lamda_vals, delta_zero, r_one_zero, r_two_zero, r_three_zero)
+  
+
+#These store the most recent draws from the functions in the Gibbs sampler for so the next function can use them
+#as parameters
+delta_current <- delta_zero
+r_one_current <- r_one_zero
+r_two_current <- r_two_zero 
+r_three_current <- r_three_zero 
+p_current <- p_zero
+  
+#storage of values for output
+delta_storage <- NULL
+r_one_storage <- NULL
+r_two_storage <- NULL
+r_three_storage <- NULL
+p_storage <- rep(list(rep(0, samples)) , length(p_zero))
+ 
+#This is the Gibbs sampler
+for(i in 1:samples){
+
+delta_new <- tail( delta_sample(lamda_vals, p_current, r_one_current, r_two_current, r_three_current),  n = 1)
+delta_storage <- append(delta_storage, delta_new)
+delta_current <- delta_new
+  
+r_one_new <- tail( r_one_sample(lamda_vals, p_current, delta_current, r_two_current, r_three_current),  n = 1)
+r_one_storage <- append(r_one_storage, r_one_new)
+r_one_current <- r_one_new
+  
+r_two_new <- tail( r_two_sample(lamda_vals, p_current, delta_current, r_one_current, r_three_current),  n = 1)
+r_two_storage <- append(r_two_storage, r_two_new)
+r_two_current <- r_two_new
+  
+r_three_new <- tail( r_three_sample(lamda_vals, p_current, delta_current, r_one_current, r_two_current),  n = 1)
+r_three_storage <- append(r_three_storage, r_three_new)
+r_three_current <- r_three_new
+
+p_new <- p_sample(x, lamda_vals, delta_current, r_one_current, r_two_current, r_three_current)
+for (s in 1:t){p_storage[[s]][i] <- p_new[s]}
+p_current <- p_new
+    
+}
+
+plot(density(delta_storage),lwd=3, main = "delta_storage")
+plot(delta_storage, type="l", lwd=.75, main = "delta_storage")
+
+plot(density(r_one_storage),lwd=3, main="r_one_storage")
+plot(r_one_storage, type="l", lwd=.75, main ="r_one_storage")
+
+plot(density(r_two_storage),lwd=3, main="r_two_storage")
+plot(r_two_storage, type="l", lwd=.75, main ="r_two_storage")
+
+plot(density(r_three_storage),lwd=3, main="r_three_storage")
+plot(r_three_storage, type="l", lwd=.75, main ="r_three_storage")
+
+plot(density(p_storage[[1]]),lwd=3, main="p_1_storage")
+plot(p_storage[[1]], type="l", lwd=.75, main ="p_1_storage")
+
+plot(density(p_storage[[2]]),lwd=3, main="p_2_storage")
+plot(p_storage[[2]], type="l", lwd=.75, main ="p_2_storage")
+
+plot(density(p_storage[[3]]),lwd=3, main="p_3_storage")
+plot(p_storage[[3]], type="l", lwd=.75, main ="p_3_storage")
+
+plot(density(p_storage[[4]]),lwd=3, main="p_4_storage")
+plot(p_storage[[4]], type="l", lwd=.75, main ="p_4_storage")
+
+#The following are runs of the metroplis algorithm using the values from the last iteration of the Gibbs sampler 
+example_delta_sample <- delta_sample(lamda_vals, p_current, r_one_current, r_two_current, r_three_current)
+plot(density(example_delta_sample),lwd=3, main="example_delta_sample")
+plot(example_delta_sample, type="l", lwd=.75, main ="example_delta_sample")
+
+example_r_one_sample <- r_one_sample(lamda_vals, p_current, delta_current, r_two_current, r_three_current)
+plot(density(example_r_one_sample),lwd=3, main="example_r_one_sample")
+plot(example_r_one_sample, type="l", lwd=.75, main ="example_r_one_sample")
+
+example_r_two_sample <- r_two_sample(lamda_vals, p_current, delta_current, r_one_current, r_three_current)
+plot(density(example_r_two_sample),lwd=3, main="example_r_two_sample")
+plot(example_r_two_sample, type="l", lwd=.75, main ="example_r_two_sample")
+
+example_r_three_sample <- r_three_sample(lamda_vals, p_current, delta_current, r_one_current, r_two_current)
+plot(density(example_r_three_sample),lwd=3, main="example_r_three_sample")
+plot(example_r_three_sample, type="l", lwd=.75, main ="example_r_three_sample")
