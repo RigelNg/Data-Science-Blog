@@ -2,6 +2,8 @@
 
 "This is an old project where an attempt to model the win rates of the MLB was done following a research article"
 
+"Testing Changes"
+
 #The relative strength parameter lamda is a function of the teams' relative statistics and the r values.
 #The r values are sampled in this model, so lamda has to be constantly recalculated using the function below.
 lamda_calc <- function(lamda_vals, r_one, r_two, r_three){
